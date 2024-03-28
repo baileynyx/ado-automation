@@ -34,7 +34,7 @@ Before running this script, ensure you have the following:
 
 ## Caution
 
-- This script modifies build definitions across all projects in the specified Azure DevOps organization. **Test the script in a non-production environment** before running it against your main organization.
+- This script modifies build definitions across all projects in the specified Azure DevOps organization.
 - **Secure Your PAT**: Ensure your Personal Access Token is kept secure. Follow best practices for handling and storing tokens.
 
 ## Troubleshooting
