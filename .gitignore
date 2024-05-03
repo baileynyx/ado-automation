@@ -1,2 +1,2 @@
-logs/*.log
 python/azure_devops_repos.xlsx
+logs/buildReportStatus.log
