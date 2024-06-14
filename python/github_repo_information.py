@@ -52,6 +52,7 @@ def detect_languages(repo_url):
             file_extension = os.path.splitext(path)[1].lower()
             mime_type = magic.from_buffer(requests.get(item['download_url']).content, mime=True)
             if mime_type.startswith('text/'):
+                # TODO: Add File to pull language extensions to search for
                 # Map file extensions to programming languages
                 if file_extension == '.py':
                     languages.add('Python')
