@@ -1,3 +1,5 @@
 Panda
 Requests
 openpyxl
+python-magic
+python-dotenv
