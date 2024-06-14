@@ -1,4 +1,5 @@
-python/azure_devops_repos.xlsx
+output/
+output/git_repos.xlsx
 logs/buildReportStatus.log
 venv/
 .env
