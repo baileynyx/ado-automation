@@ -1,3 +1,5 @@
 python/azure_devops_repos.xlsx
 logs/buildReportStatus.log
 venv/
+.env
+.vscode/settings.json
