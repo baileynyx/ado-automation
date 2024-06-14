@@ -1,0 +1,3 @@
+Panda
+Requests
+openpyxl
