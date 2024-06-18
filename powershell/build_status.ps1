@@ -23,7 +23,7 @@ function Invoke-AzureDevOpsAPI {
         [string]$personalAccessToken,  # PAT for API authentication.
         [bool]$debug  # Debug flag to control verbose logging.
     )
-    
+
     # Prepares the authentication header using the provided PAT.
     $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$($personalAccessToken)"))
     $headers = @{
@@ -82,11 +82,11 @@ foreach ($project in $projects.value) {
             # Constructs the URI for updating the specific build definition.
             $uri = "https://dev.azure.com/$organization/$($project.name)/_apis/build/definitions/$($def.id)?api-version=6.0"
             $currentDefinition = Invoke-AzureDevOpsAPI -Uri $uri -Method Get -personalAccessToken $unsecurePersonalAccessToken -debug $debug
-            
+
             # Sets the "Report Build Status" property to true.
             $currentDefinition.repository.properties.reportBuildStatus = "true"
             $body = $currentDefinition | ConvertTo-Json -Depth 10 -Compress
-            
+
             try {
                 # Attempts to update the build definition with the new settings.
                 $response = Invoke-AzureDevOpsAPI -Uri $uri -Method Put -Body $body -personalAccessToken $unsecurePersonalAccessToken -debug $debug

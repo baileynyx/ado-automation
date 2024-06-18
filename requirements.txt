@@ -3,6 +3,9 @@ requests
 openpyxl
 python-magic
 python-dotenv
+Flake8
+pre-commit
+importlib-metadata
 libmagic
 python-libmagic
 cffi

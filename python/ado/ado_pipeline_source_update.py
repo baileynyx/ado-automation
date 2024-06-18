@@ -65,7 +65,7 @@ def update_yaml_content(yaml_path, repo_name):
     try:
         with open(yaml_path) as file:
             yaml_data = yaml.safe_load(file)
-        
+
         for repo in yaml_data.get('resources', {}).get('repositories', []):
             if repo.get('type', '') == 'git':
                 repo['type'] = 'github'
