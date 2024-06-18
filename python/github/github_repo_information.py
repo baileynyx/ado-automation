@@ -42,7 +42,7 @@ def detect_languages(repo_url):
     # Fetch the repository items to scan for file extensions
     contents_url = f"{repo_url}/contents"
     response = requests.get(contents_url, headers=headers)
-    
+
     if response.status_code == 200:
         items = response.json()
         for item in items:
@@ -100,14 +100,14 @@ for repo in repos:
         last_commit_date = commits_data[0]['commit']['committer']['date'] if commits_data else 'No commits'
     else:
         last_commit_date = 'Failed to fetch commits'
-    
+
     # Fetch detailed information to get the size with error handling
     repo_detail_response = requests.get(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
-    
+
     if repo_detail_response.status_code == 200:
         repo_detail = repo_detail_response.json()
         repo_data = [repo_name, repo_detail.get('size', 'Unknown'), last_commit_date]
-        
+
         if CATEGORY_LABEL_LANGUAGE:
             languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
             repo_data.append(', '.join(languages))
@@ -118,7 +118,7 @@ for repo in repos:
         else:
             # Add placeholder team and owner information if not found
             repo_data.extend(['N/A', 'N/A'])
-        
+
         repositories_data.append(repo_data)
     else:
         print(f"Failed to fetch details for repository {repo_name}: {repo_detail_response.status_code} {repo_detail_response.text}")
