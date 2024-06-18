@@ -1,5 +1,8 @@
-Panda
-Requests
+pandas
+requests
 openpyxl
 python-magic
 python-dotenv
+libmagic
+python-libmagic
+cffi
