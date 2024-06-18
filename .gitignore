@@ -4,3 +4,39 @@ logs/buildReportStatus.log
 venv/
 .env
 .vscode/settings.json
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# dotenv environment variable files
+.env
+.env.local
+.env.*.local
+
+# Ignore Mac system files
+.DS_Store
+
+# Ignore by OS
+Thumbs.db
+
+# Ignore build output
+dist/
+build/
