@@ -6,10 +6,9 @@ on:
     branches:
       - main
     paths:
-      - '**/*.tpl'
       - '**/*.py'
-      - '**/*.tf'
-      - '.github/workflows/release.yml'
+      - '**/*.ps1'
+      - '**/*.yml'
 
 permissions:
   contents: write
