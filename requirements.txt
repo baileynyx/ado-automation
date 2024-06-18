@@ -3,3 +3,4 @@ Requests
 openpyxl
 python-magic
 python-dotenv
+Flake8
