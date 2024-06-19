@@ -35,6 +35,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Debug GITHUB_REPOSITORY
+        run: echo "GITHUB_REPOSITORY=${{ github.repository }}"
+
+      - name: Debug GitHub Context
+        run: echo "${{ toJson(github) }}"
+
       - name: Release
         uses: cycjimmy/semantic-release-action@v3
         with:
