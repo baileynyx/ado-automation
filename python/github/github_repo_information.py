@@ -85,12 +85,13 @@ if response.status_code == 200:
                 languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
                 repo_data.append(', '.join(languages))
 
-            if CATEGORY_LABEL_TEAM and repo_name in team_owner_dict:
-                team_owner_info = team_owner_dict[repo_name]
-                repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
-            else:
-                # Add placeholder team and owner information if not found
-                repo_data.extend(['N/A', 'N/A'])
+            if CATEGORY_LABEL_TEAM:
+                if repo_name in team_owner_dict:
+                    team_owner_info = team_owner_dict[repo_name]
+                    repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
+                else:
+                    # Add placeholder team and owner information if not found
+                    repo_data.extend(['N/A', 'N/A'])
 
             repositories_data.append(repo_data)
         else:
