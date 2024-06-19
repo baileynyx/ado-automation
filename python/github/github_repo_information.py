@@ -57,6 +57,8 @@ def detect_languages(repo_url):
 # Fetch repositories
 repos_url = f"{base_url}/repos"
 response = requests.get(repos_url, headers=headers)
+if response.status_code != 200:
+    print(f"Could not query repos from GitHub org: {organization}. Status code: {response.status_code}, Reason: {response.reason}")
 
 if response.status_code == 200:
     repos = response.json()
