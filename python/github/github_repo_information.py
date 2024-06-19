@@ -11,7 +11,7 @@ import requests
 import pandas as pd
 import base64
 import os
-import magic
+import mimetypes
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -39,7 +39,6 @@ team_owner_dict = {}
 # Function to detect programming languages based on file extensions
 def detect_languages(repo_url):
     languages = set()
-    # Fetch the repository items to scan for file extensions
     contents_url = f"{repo_url}/contents"
     response = requests.get(contents_url, headers=headers)
 
@@ -50,78 +49,52 @@ def detect_languages(repo_url):
                 continue
             path = item['path']
             file_extension = os.path.splitext(path)[1].lower()
-            mime_type = magic.from_buffer(requests.get(item['download_url']).content, mime=True)
-            if mime_type.startswith('text/'):
-                # TODO: Add File to pull language extensions to search for
-                # Map file extensions to programming languages
-                if file_extension == '.py':
-                    languages.add('Python')
-                elif file_extension == '.js':
-                    languages.add('JavaScript')
-                elif file_extension == '.html':
-                    languages.add('HTML')
-                elif file_extension == '.css':
-                    languages.add('CSS')
-                # Add more file extensions and corresponding languages as needed
+            mime_type, _ = mimetypes.guess_type(item['download_url'])
+            if mime_type and mime_type.startswith('text/'):
+                languages.add(file_extension)
     return languages
 
-# Function to populate team and owner information from the existing xlsx file
-def populate_team_owner_info(xlsx_path):
-    df_existing = pd.read_excel(xlsx_path)
-    for index, row in df_existing.iterrows():
-        repo_name = row['Repository Name']
-        team_owner_dict[repo_name] = {
-            'team': row['Team Name'],
-            'owner': row['Owner']
-        }
+# Fetch repositories
+repos_url = f"{base_url}/repos"
+response = requests.get(repos_url, headers=headers)
 
-# Check if team information should be populated
-if CATEGORY_LABEL_TEAM:
-    existing_xlsx_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output', 'github_repos.xlsx')
-    if os.path.exists(existing_xlsx_path):
-        populate_team_owner_info(existing_xlsx_path)
+if response.status_code == 200:
+    repos = response.json()
+    for repo in repos:
+        repo_name = repo['name']
+        print(f"Fetching details for repository: {repo_name}")
 
-# Fetch all repositories with error handling
-repos_response = requests.get(f'{base_url}/repos', headers=headers)
+        # Fetch commits to get the last commit date
+        commits_url = f"https://api.github.com/repos/{organization}/{repo_name}/commits"
+        commits_response = requests.get(commits_url, headers=headers)
 
-if repos_response.status_code == 200:
-    repos = repos_response.json()
-else:
-    print(f"Failed to fetch repositories: {repos_response.status_code} {repos_response.text}")
-    exit()
-
-for repo in repos:
-    repo_name = repo['name']
-    # Fetch the last commit date for the repository
-    commits_url = f"https://api.github.com/repos/{organization}/{repo_name}/commits"
-    commits_response = requests.get(commits_url, headers=headers)
-    if commits_response.status_code == 200:
-        commits_data = commits_response.json()
-        last_commit_date = commits_data[0]['commit']['committer']['date'] if commits_data else 'No commits'
-    else:
-        last_commit_date = 'Failed to fetch commits'
-
-    # Fetch detailed information to get the size with error handling
-    repo_detail_response = requests.get(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
-
-    if repo_detail_response.status_code == 200:
-        repo_detail = repo_detail_response.json()
-        repo_data = [repo_name, repo_detail.get('size', 'Unknown'), last_commit_date]
-
-        if CATEGORY_LABEL_LANGUAGE:
-            languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
-            repo_data.append(', '.join(languages))
-
-        if CATEGORY_LABEL_TEAM and repo_name in team_owner_dict:
-            team_owner_info = team_owner_dict[repo_name]
-            repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
+        if commits_response.status_code == 200:
+            commits_data = commits_response.json()
+            last_commit_date = commits_data[0]['commit']['committer']['date'] if commits_data else 'No commits'
         else:
-            # Add placeholder team and owner information if not found
-            repo_data.extend(['N/A', 'N/A'])
+            last_commit_date = 'Failed to fetch commits'
 
-        repositories_data.append(repo_data)
-    else:
-        print(f"Failed to fetch details for repository {repo_name}: {repo_detail_response.status_code} {repo_detail_response.text}")
+        # Fetch detailed information to get the size with error handling
+        repo_detail_response = requests.get(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
+
+        if repo_detail_response.status_code == 200:
+            repo_detail = repo_detail_response.json()
+            repo_data = [repo_name, repo_detail.get('size', 'Unknown'), last_commit_date]
+
+            if CATEGORY_LABEL_LANGUAGE:
+                languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
+                repo_data.append(', '.join(languages))
+
+            if CATEGORY_LABEL_TEAM and repo_name in team_owner_dict:
+                team_owner_info = team_owner_dict[repo_name]
+                repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
+            else:
+                # Add placeholder team and owner information if not found
+                repo_data.extend(['N/A', 'N/A'])
+
+            repositories_data.append(repo_data)
+        else:
+            print(f"Failed to fetch details for repository {repo_name}: {repo_detail_response.status_code} {repo_detail_response.text}")
 
 # Define columns based on the enabled categories
 columns = ['Repository Name', 'Size in KB', 'Last Commit Date']
