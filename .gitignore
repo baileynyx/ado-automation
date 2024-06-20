@@ -3,6 +3,7 @@ output/git_repos.xlsx
 logs/buildReportStatus.log
 venv/
 .env
+.vscode/launch.json
 .vscode/settings.json
 
 # Node.js

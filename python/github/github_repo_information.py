@@ -54,15 +54,40 @@ def detect_languages(repo_url):
                 languages.add(file_extension)
     return languages
 
+def populate_team_owner_info(xlsx_path):
+    df_existing = pd.read_excel(xlsx_path)
+    if 'Team Name' not in df_existing.columns or 'Owner' not in df_existing.columns:
+        print("Skipping reading of previous team and owner data.")
+        print(f"The 'Team Name' or 'Owner' columns were not found in: {xlsx_path}")
+    else:
+        print("Reading previous team and owner data.")
+        for index, row in df_existing.iterrows():
+            repo_name = row['Repository Name']
+            team_owner_dict[repo_name] = {
+                'team': row['Team Name'],
+                'owner': row['Owner']
+            }
+
+# Check if previous team and owner information should be reused.
+if CATEGORY_LABEL_TEAM:
+    existing_xlsx_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output', 'github_repos.xlsx')
+    if os.path.exists(existing_xlsx_path):
+        populate_team_owner_info(existing_xlsx_path)
+
 # Fetch repositories
 repos_url = f"{base_url}/repos"
 response = requests.get(repos_url, headers=headers)
+if response.status_code == 200:
+    print(f"GitHub org: {organization}")
+else:
+    print(f"Could not query repos from GitHub org {organization}: {response.status_code}, {response.reason}")
 
 if response.status_code == 200:
     repos = response.json()
+    print(f"Number of repositories: {len(repos)}")
     for repo in repos:
         repo_name = repo['name']
-        print(f"Fetching details for repository: {repo_name}")
+        print(f"Fetching details for repository {repo_name}")
 
         # Fetch commits to get the last commit date
         commits_url = f"https://api.github.com/repos/{organization}/{repo_name}/commits"
@@ -85,12 +110,13 @@ if response.status_code == 200:
                 languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
                 repo_data.append(', '.join(languages))
 
-            if CATEGORY_LABEL_TEAM and repo_name in team_owner_dict:
-                team_owner_info = team_owner_dict[repo_name]
-                repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
-            else:
-                # Add placeholder team and owner information if not found
-                repo_data.extend(['N/A', 'N/A'])
+            if CATEGORY_LABEL_TEAM:
+                if repo_name in team_owner_dict:
+                    team_owner_info = team_owner_dict[repo_name]
+                    repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
+                else:
+                    # Add placeholder team and owner information if not found
+                    repo_data.extend(['N/A', 'N/A'])
 
             repositories_data.append(repo_data)
         else:
@@ -104,12 +130,15 @@ if CATEGORY_LABEL_TEAM:
     columns.extend(['Team Name', 'Owner'])
 
 # Convert the repositories data into a Pandas DataFrame
+print("Preparing output data.")
 df_repos = pd.DataFrame(repositories_data, columns=columns)
 
 # Ensure the output directory exists
+print("Preparing to output to Excel file.")
 output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output')
 os.makedirs(output_dir, exist_ok=True)
 
 # Export the DataFrame to an Excel file in the output directory
 output_path = os.path.join(output_dir, 'github_repos.xlsx')
 df_repos.to_excel(output_path, index=False)
+print(f"Data exported to: {output_path}")
