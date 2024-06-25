@@ -112,21 +112,29 @@ if CATEGORY_LABEL_TEAM:
     if os.path.exists(existing_xlsx_path):
         populate_team_owner_info(existing_xlsx_path)
 
-# Fetch repositories
+# Fetch repositories with pagination
 repos_url = f"{base_url}/repos"
-response = requests.get(repos_url, headers=headers)
-if response.status_code == 200:
-    print(f"GitHub org: {organization}")
-else:
-    print(f"Could not query repos from GitHub org {organization}: {response.status_code}, {response.reason}")
+page = 1
+per_page = 3  # Max is 100.
+num_repos = 0
 
-if response.status_code == 200:
-    repos = response.json()
-    print(f"Number of repositories: {len(repos)}")
-    for repo in repos:
-        repo_data = get_repository_data(organization, repo)
-        if repo_data:
-            repositories_data.append(repo_data)
+while True:
+    paginated_url = f"{repos_url}?per_page={per_page}&page={page}"
+    response = requests.get(paginated_url, headers=headers)
+    if response.status_code == 200:
+        repos = response.json()
+        if not repos:
+            break  # Break the loop if no more repositories to fetch
+        num_repos += len(repos)
+        print(f"Page {page} with {len(repos)} repos. Total repos fetched: {num_repos}")
+        for repo in repos:
+            repo_data = get_repository_data(organization, repo)
+            if repo_data:
+                repositories_data.append(repo_data)
+        page += 1  # Go to the next page
+    else:
+        print(f"Could not query repos from GitHub org {organization} on page {page}: {response.status_code}, {response.reason}")
+        break
 
 # Define columns based on the enabled categories
 columns = ['Repository Name', 'Size in KB', 'Last Commit Date']
