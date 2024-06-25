@@ -13,6 +13,7 @@ import base64
 import os
 import mimetypes
 from dotenv import load_dotenv
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,7 +41,7 @@ team_owner_dict = {}
 def detect_languages(repo_url):
     languages = set()
     contents_url = f"{repo_url}/contents"
-    response = requests.get(contents_url, headers=headers)
+    response = safe_get_request(contents_url, headers=headers)
 
     if response.status_code == 200:
         items = response.json()
@@ -68,13 +69,34 @@ def populate_team_owner_info(xlsx_path):
                 'owner': row['Owner']
             }
 
+# Extracts the rate limit reset time from the response headers.
+def get_rate_limit_reset_time(response):
+    reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
+    return reset_time
+
+# Waits until the rate limit reset time.
+def wait_for_rate_limit_reset(reset_time):
+    wait_time = reset_time - int(time.time()) + 10  # Adding a 10-second buffer.
+    if wait_time > 0:
+        print(f"Rate limit exceeded. Waiting for {wait_time} seconds.")
+        time.sleep(wait_time)
+
+# Makes a request and handles rate limiting by waiting until the limit is reset.
+def safe_get_request(url, headers):
+    response = requests.get(url, headers=headers)
+    if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+        reset_time = get_rate_limit_reset_time(response)
+        wait_for_rate_limit_reset(reset_time)
+        return safe_get_request(url, headers)  # Retry the request
+    return response
+
 def get_repository_data(organization, repo):
     repo_name = repo['name']
     print(f"Fetching details for repository {repo_name}")
 
     # Fetch commits to get the last commit date
     commits_url = f"https://api.github.com/repos/{organization}/{repo_name}/commits"
-    commits_response = requests.get(commits_url, headers=headers)
+    commits_response = safe_get_request(commits_url, headers=headers)
 
     if commits_response.status_code == 200:
         commits_data = commits_response.json()
@@ -83,7 +105,7 @@ def get_repository_data(organization, repo):
         last_commit_date = 'Failed to fetch commits'
 
     # Fetch detailed information to get the size with error handling
-    repo_detail_response = requests.get(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
+    repo_detail_response = safe_get_request(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
 
     if repo_detail_response.status_code == 200:
         repo_detail = repo_detail_response.json()
@@ -120,7 +142,7 @@ num_repos = 0
 
 while True:
     paginated_url = f"{repos_url}?per_page={per_page}&page={page}"
-    response = requests.get(paginated_url, headers=headers)
+    response = safe_get_request(paginated_url, headers=headers)
     if response.status_code == 200:
         repos = response.json()
         if not repos:
