@@ -39,7 +39,7 @@ jobs:
         run: echo "GITHUB_REPOSITORY=${{ github.repository }}"
 
       - name: Debug GitHub Context
-        run: echo "${{ toJson(github) }}"
+        run: echo '${{ toJson(github) }}'
 
       - name: Release
         uses: cycjimmy/semantic-release-action@v3
