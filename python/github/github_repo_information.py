@@ -137,7 +137,7 @@ if CATEGORY_LABEL_TEAM:
 # Fetch repositories with pagination
 repos_url = f"{base_url}/repos"
 page = 1
-per_page = 3  # Max is 100.
+per_page = 50  # Max is 100.
 num_repos = 0
 
 while True:
