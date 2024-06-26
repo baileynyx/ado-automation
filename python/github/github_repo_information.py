@@ -13,6 +13,7 @@ import base64
 import os
 import mimetypes
 from dotenv import load_dotenv
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,7 +41,7 @@ team_owner_dict = {}
 def detect_languages(repo_url):
     languages = set()
     contents_url = f"{repo_url}/contents"
-    response = requests.get(contents_url, headers=headers)
+    response = safe_get_request(contents_url, headers=headers)
 
     if response.status_code == 200:
         items = response.json()
@@ -68,59 +69,94 @@ def populate_team_owner_info(xlsx_path):
                 'owner': row['Owner']
             }
 
+# Extracts the rate limit reset time from the response headers.
+def get_rate_limit_reset_time(response):
+    reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
+    return reset_time
+
+# Waits until the rate limit reset time.
+def wait_for_rate_limit_reset(reset_time):
+    wait_time = reset_time - int(time.time()) + 10  # Adding a 10-second buffer.
+    if wait_time > 0:
+        print(f"Rate limit exceeded. Waiting for {wait_time} seconds.")
+        time.sleep(wait_time)
+
+# Makes a request and handles rate limiting by waiting until the limit is reset.
+def safe_get_request(url, headers):
+    response = requests.get(url, headers=headers)
+    if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+        reset_time = get_rate_limit_reset_time(response)
+        wait_for_rate_limit_reset(reset_time)
+        return safe_get_request(url, headers)  # Retry the request
+    return response
+
+def get_repository_data(organization, repo):
+    repo_name = repo['name']
+    print(f"Fetching details for repository {repo_name}")
+
+    # Fetch commits to get the last commit date
+    commits_url = f"https://api.github.com/repos/{organization}/{repo_name}/commits"
+    commits_response = safe_get_request(commits_url, headers=headers)
+
+    if commits_response.status_code == 200:
+        commits_data = commits_response.json()
+        last_commit_date = commits_data[0]['commit']['committer']['date'] if commits_data else 'No commits'
+    else:
+        last_commit_date = 'Failed to fetch commits'
+
+    # Fetch detailed information to get the size with error handling
+    repo_detail_response = safe_get_request(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
+
+    if repo_detail_response.status_code == 200:
+        repo_detail = repo_detail_response.json()
+        repo_data = [repo_name, repo_detail.get('size', 'Unknown'), last_commit_date]
+
+        if CATEGORY_LABEL_LANGUAGE:
+            languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
+            repo_data.append(', '.join(languages))
+
+        if CATEGORY_LABEL_TEAM:
+            if repo_name in team_owner_dict:
+                team_owner_info = team_owner_dict[repo_name]
+                repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
+            else:
+                # Add placeholder team and owner information if not found
+                repo_data.extend(['N/A', 'N/A'])
+
+        return repo_data
+    else:
+        print(f"Failed to fetch details for repository {repo_name}: {repo_detail_response.status_code} {repo_detail_response.text}")
+        return None
+
 # Check if previous team and owner information should be reused.
 if CATEGORY_LABEL_TEAM:
     existing_xlsx_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'output', 'github_repos.xlsx')
     if os.path.exists(existing_xlsx_path):
         populate_team_owner_info(existing_xlsx_path)
 
-# Fetch repositories
+# Fetch repositories with pagination
 repos_url = f"{base_url}/repos"
-response = requests.get(repos_url, headers=headers)
-if response.status_code == 200:
-    print(f"GitHub org: {organization}")
-else:
-    print(f"Could not query repos from GitHub org {organization}: {response.status_code}, {response.reason}")
+page = 1
+per_page = 50  # Max is 100.
+num_repos = 0
 
-if response.status_code == 200:
-    repos = response.json()
-    print(f"Number of repositories: {len(repos)}")
-    for repo in repos:
-        repo_name = repo['name']
-        print(f"Fetching details for repository {repo_name}")
-
-        # Fetch commits to get the last commit date
-        commits_url = f"https://api.github.com/repos/{organization}/{repo_name}/commits"
-        commits_response = requests.get(commits_url, headers=headers)
-
-        if commits_response.status_code == 200:
-            commits_data = commits_response.json()
-            last_commit_date = commits_data[0]['commit']['committer']['date'] if commits_data else 'No commits'
-        else:
-            last_commit_date = 'Failed to fetch commits'
-
-        # Fetch detailed information to get the size with error handling
-        repo_detail_response = requests.get(f"https://api.github.com/repos/{organization}/{repo_name}", headers=headers)
-
-        if repo_detail_response.status_code == 200:
-            repo_detail = repo_detail_response.json()
-            repo_data = [repo_name, repo_detail.get('size', 'Unknown'), last_commit_date]
-
-            if CATEGORY_LABEL_LANGUAGE:
-                languages = detect_languages(f"https://api.github.com/repos/{organization}/{repo_name}")
-                repo_data.append(', '.join(languages))
-
-            if CATEGORY_LABEL_TEAM:
-                if repo_name in team_owner_dict:
-                    team_owner_info = team_owner_dict[repo_name]
-                    repo_data.extend([team_owner_info['team'], team_owner_info['owner']])
-                else:
-                    # Add placeholder team and owner information if not found
-                    repo_data.extend(['N/A', 'N/A'])
-
-            repositories_data.append(repo_data)
-        else:
-            print(f"Failed to fetch details for repository {repo_name}: {repo_detail_response.status_code} {repo_detail_response.text}")
+while True:
+    paginated_url = f"{repos_url}?per_page={per_page}&page={page}"
+    response = safe_get_request(paginated_url, headers=headers)
+    if response.status_code == 200:
+        repos = response.json()
+        if not repos:
+            break  # Break the loop if no more repositories to fetch
+        num_repos += len(repos)
+        print(f"Page {page} with {len(repos)} repos. Total repos fetched: {num_repos}")
+        for repo in repos:
+            repo_data = get_repository_data(organization, repo)
+            if repo_data:
+                repositories_data.append(repo_data)
+        page += 1  # Go to the next page
+    else:
+        print(f"Could not query repos from GitHub org {organization} on page {page}: {response.status_code}, {response.reason}")
+        break
 
 # Define columns based on the enabled categories
 columns = ['Repository Name', 'Size in KB', 'Last Commit Date']
