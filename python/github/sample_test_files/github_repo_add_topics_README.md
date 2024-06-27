@@ -1,6 +1,6 @@
-# GitHub Repository Topics Automation Script
+# GitHub Repository Add Topics Automation Script
 
-This script allows you to automate the process of adding topics to GitHub repositories by reading the repository details and desired topics from a CSV file.
+The `github_repo_add_topics.py` Python script allows you to automate the process of adding topics to GitHub repositories by reading the repository details and topics to be added from a CSV file.
 
 The script will add the specified topics to the repos if the topics do not already exist. It will not remove any existing topics.
 
