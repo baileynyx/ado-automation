@@ -5,19 +5,6 @@ import os
 import base64
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Your personal access token (PAT) from environment variables
-pat = os.getenv('GITHUB_PAT')
-
-# Base64 encode the PAT
-encoded_pat = base64.b64encode(bytes(f'{pat}', 'utf-8')).decode('utf-8')
-headers = {
-    'Authorization': f'Basic {encoded_pat}',
-    'Accept': 'application/vnd.github.v3+json'
-}
-
 class CSVFileError(Exception):
     """Base exception class for CSV file-related errors."""
     def __init__(self, csv_path, message):
@@ -57,7 +44,7 @@ class CSVFileParseError(CSVFileError):
 def read_csv_file(csv_path):
     """
     Reads a CSV file and returns a DataFrame if it contains the required columns.
-    Raises an exception if there are issues with the CSV file, including if the csv_path is None or empty.
+    :raises CSVFileError: If there are issues with the CSV file or path.
     """
 
     if csv_path is None or not csv_path.strip():
@@ -116,23 +103,27 @@ class TopicUpdateError(TopicError):
     def __init__(self, owner, repo, status_code, message):
         super().__init__("update", owner, repo, status_code, message)
 
-def get_current_repo_topics(owner, repo):
+def get_current_repo_topics(base64_encoded_pat, owner, repo):
     """
     Fetches the current topics of a given GitHub repository.
 
     :param owner: The owner of the repository.
     :param repo: The name of the repository.
-    :return: A list of current topics if successful.
+    :return: The current list topics. May be an empty list.
     :raises TopicFetchError: If fetching topics fails.
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/topics"
-    response = requests.get(url, headers=headers)
+    request_headers = {
+        'Authorization': f'Basic {base64_encoded_pat}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    response = requests.get(url, headers=request_headers)
     if response.status_code == 200:
         return response.json().get('names', [])
     else:
         raise TopicFetchError(owner, repo, response.status_code, response.text)
 
-def update_repo_topics(owner, repo, topics):
+def update_repo_topics(base64_encoded_pat, owner, repo, topics):
     """
     Updates the topics of a given GitHub repository.
 
@@ -143,11 +134,15 @@ def update_repo_topics(owner, repo, topics):
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/topics"
     payload = {"names": topics}
-    response = requests.put(url, json=payload, headers=headers)
+    request_headers = {
+        'Authorization': f'Basic {base64_encoded_pat}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    response = requests.put(url, json=payload, headers=request_headers)
     if response.status_code != 200:
         raise TopicUpdateError(owner, repo, response.status_code, response.text)
 
-def add_topics_to_repo(owner, repo, new_topics):
+def add_topics_to_repo(base64_encoded_pat, owner, repo, new_topics):
     """
     Adds topics to a given GitHub repository without removing existing topics.
 
@@ -162,24 +157,26 @@ def add_topics_to_repo(owner, repo, new_topics):
         return
 
     # Fetch current topics
-    current_topics = get_current_repo_topics(owner, repo)
+    current_topics = get_current_repo_topics(base64_encoded_pat, owner, repo)
 
-    # Check if all new topics are already in current topics
+    # Check if all new topics are already in current topics.
     if set(new_topics).issubset(set(current_topics)):
         print(f"Repo: {owner}/{repo}, Skipping. All provided topics already exist: {new_topics}")
         return
 
-    # Merge new topics with current topics without duplicates
+    # Merge new topics with current topics without duplicates.
     updated_topics = list(set(current_topics + new_topics))
 
     print(f"Repo: {owner}/{repo}, Adding topics: {new_topics}")
 
     # Update the repository's topics
-    update_repo_topics(owner, repo, updated_topics)
+    update_repo_topics(base64_encoded_pat, owner, repo, updated_topics)
 
-def process_csv(csv_path):
+def process_csv(base64_encoded_pat, csv_path):
     """
     Processes each row in the CSV file to add topics to repositories.
+    :raises CSVFileError: If there are issues with the CSV file or path.
+    :raises TopicError: If adding topics fails.
     """
     df = read_csv_file(csv_path)
 
@@ -187,19 +184,27 @@ def process_csv(csv_path):
         repo = row['Repo']
         owner = row['Owner']
         topics = split_topics(row['Topics'])
-        add_topics_to_repo(owner, repo, topics)
+        add_topics_to_repo(base64_encoded_pat, owner, repo, topics)
 
 if __name__ == "__main__":
 
     try:
 
-        # Check if a CSV file path is passed as a command-line argument
+        # Load environment variables from .env file.
+        load_dotenv()
+
+        # Get the Personal Access Token (PAT) from environment variables.
+        pat = os.getenv('GITHUB_PAT')
+        # Base64 encode the PAT
+        base64_encoded_pat = base64.b64encode(bytes(f'{pat}', 'utf-8')).decode('utf-8')
+
+        # Check if a CSV file path is passed as a command-line argument.
         if len(sys.argv) > 1:
             csv_path = sys.argv[1]
         else:
             csv_path = input("Enter the path to the CSV file: ")
 
-        process_csv(csv_path)
+        process_csv(base64_encoded_pat, csv_path)
 
         print("Processing completed successfully.")
 
