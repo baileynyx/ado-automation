@@ -93,19 +93,19 @@ def get_repo_names_from_csv(csv_path):
 
     return repo_names
 
-def get_code_scanning_config_id(base64_encoded_pat, owner, config_name):
+def get_code_security_config_id(base64_encoded_pat, owner, config_name):
     """
-    Retrieves the ID of a code scanning configuration based on the owner and the configuration name.
+    Retrieves the ID of a code security configuration based on the owner and the configuration name.
 
     Parameters:
     owner (str): The owner of the GitHub repository.
-    config_name (str): The name of the code scanning configuration.
+    config_name (str): The name of the code security configuration.
 
     Returns:
-    int: The ID of the code scanning configuration or None if not found.
+    int: The ID of the code security configuration or None if not found.
     """
 
-    raise NotImplementedError("The get_code_scanning_config_id(..) function is not implemented yet.")
+    raise NotImplementedError("The get_code_security_config_id(..) function is not implemented yet.")
 
 if __name__ == "__main__":
 
@@ -116,9 +116,9 @@ if __name__ == "__main__":
 
         base64_encoded_pat = get_base64_encoded_pat()
 
-        parser = argparse.ArgumentParser(description="Attach a code scanning configuration to GitHub repositories.")
+        parser = argparse.ArgumentParser(description="Attach a code security configuration to GitHub repositories.")
         parser.add_argument("owner", help="GitHub name of the user or organization name that owns the GitHub repositories.")
-        parser.add_argument("config_name", help="Name of the code scanning configuration to attach.")
+        parser.add_argument("config_name", help="Name of the code security configuration to attach.")
         parser.add_argument("csv_path", help="Path to the CSV file containing repository names, in a column named `Repo`.")
 
         args = parser.parse_args()
@@ -129,10 +129,10 @@ if __name__ == "__main__":
 
         repo_names = get_repo_names_from_csv(args.csv_path)
 
-        configuration_id = get_code_scanning_config_id(base64_encoded_pat, args.owner, args.config_name)
+        configuration_id = get_code_security_config_id(base64_encoded_pat, args.owner, args.config_name)
 
         # TODO: Get repository_id of each repo.
-        # TODO: Attach code scanning configuration to each repository.
+        # TODO: Attach code security configuration to each repository.
 
         print("Processing completed successfully.")
 
