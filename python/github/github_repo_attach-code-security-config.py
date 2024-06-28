@@ -58,6 +58,7 @@ class CSVFileParseError(CSVFileError):
 def read_csv_file(csv_path):
     """
     Reads a CSV file and returns a DataFrame if it contains the required columns.
+    :return: DataFrame containing the CSV data.
     :raises CSVFileError: If there are issues with the CSV file or path.
     """
 
@@ -129,6 +130,17 @@ class CodeSecurityConfigRetrievalError(Exception):
         super().__init__(message)
 
 def get_code_security_config_id(base64_encoded_pat, owner, config_name):
+    """
+    Retrieves the ID of a specific code security configuration for a GitHub organization.
+
+    :param base64_encoded_pat: The GitHub Personal Access Token (PAT) encoded in base64.
+                               This is used for authentication with the GitHub API.
+    :param owner: The name of the GitHub organization owning the repos and code security configurations.
+    :param config_name: The name of the code security configuration to retrieve the ID for.
+    :return: The ID of the code security configuration if found.
+    :raises CodeSecurityConfigNotFoundError: If no configuration with the given name is found for the owner.
+    :raises CodeSecurityConfigRetrievalError: If there is an error in retrieving the configurations from GitHub.
+    """
     try:
         print(f"Retrieving code security configurations for owner: '{owner}'")
 
@@ -157,6 +169,44 @@ def get_code_security_config_id(base64_encoded_pat, owner, config_name):
         # Raise a custom exception with the original error message
         raise CodeSecurityConfigRetrievalError(str(e))
 
+class RepositoryNotFoundError(Exception):
+    """Exception raised when a GitHub repository is not found."""
+    def __init__(self, repo_name, owner):
+        self.repo_name = repo_name
+        self.owner = owner
+        self.message = f"Repository '{repo_name}' not found for owner '{owner}'."
+        super().__init__(self.message)
+
+def get_repo_ids_from_names(base64_encoded_pat, owner, repo_names):
+    """
+    Fetches the IDs of given GitHub repositories for a specific owner using a Base64 encoded Personal Access Token (PAT).
+
+    This function sends a GET request to the GitHub API for each repository name provided in the `repo_names` list. It constructs a dictionary mapping each repository name to its corresponding ID as found in the GitHub API response. If a repository does not exist, a `RepositoryNotFoundError` is raised.
+
+    :param base64_encoded_pat: The Base64 encoded Personal Access Token used for authentication with the GitHub API.
+    :param owner: The owner of the repositories. This is typically a user or organization name.
+    :param repo_names: A list of repository names for which IDs are to be fetched.
+    :return: A dictionary mapping repository names to their respective IDs.
+    :rtype: dict
+    :raises RepositoryNotFoundError: If any of the repositories do not exist under the specified owner.
+    """
+    repo_ids = {}
+    for repo_name in repo_names:
+        repo_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+        request_headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Basic {base64_encoded_pat}",
+        }
+        response = requests.get(repo_url, headers=request_headers)
+        if response.status_code == 200:
+            repo_data = response.json()
+            repo_ids[repo_name] = repo_data['id']
+            print(f"Repository Name: {repo_name} has ID: {repo_data['id']}")
+        else:
+            raise RepositoryNotFoundError(repo_name, owner)
+    return repo_ids
+
 if __name__ == "__main__":
 
     try:
@@ -181,7 +231,8 @@ if __name__ == "__main__":
 
         repo_names = get_repo_names_from_csv(args.csv_path)
 
-        # TODO: Get repository_id of each repo.
+        repos = get_repo_ids_from_names(base64_encoded_pat, args.owner, repo_names)
+
         # TODO: Attach code security configuration to each repository.
 
         print("Processing completed successfully.")
