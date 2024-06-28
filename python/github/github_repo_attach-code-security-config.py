@@ -3,6 +3,8 @@ import argparse
 import base64
 import os
 import pandas as pd
+import requests
+import time
 from dotenv import load_dotenv
 
 def get_base64_encoded_pat():
@@ -93,19 +95,67 @@ def get_repo_names_from_csv(csv_path):
 
     return repo_names
 
+def get_rate_limit_reset_time(response):
+    """ Extracts the rate limit reset time from the response headers. """
+    reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
+    return reset_time
+
+def wait_for_rate_limit_reset(reset_time):
+    """ Waits until the rate limit reset time. """
+    wait_time = reset_time - int(time.time()) + 10  # Adding a 10-second buffer.
+    if wait_time > 0:
+        print(f"Rate limit exceeded. Waiting for {wait_time} seconds.")
+        time.sleep(wait_time)
+
+def safe_get_request(url, headers):
+    """ Makes a request and handles rate limiting by waiting until the limit is reset."""
+    response = requests.get(url, headers=headers)
+    if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+        reset_time = get_rate_limit_reset_time(response)
+        wait_for_rate_limit_reset(reset_time)
+        return safe_get_request(url, headers)  # Retry the request
+    return response
+
+class CodeSecurityConfigNotFoundError(Exception):
+    """Exception raised when the code security configuration is not found."""
+    def __init__(self, owner, config_name):
+        message = f"Code security configuration '{config_name}' not found for owner '{owner}'."
+        super().__init__(message)
+
+class CodeSecurityConfigRetrievalError(Exception):
+    """Exception raised when there is an error retrieving the code security configuration."""
+    def __init__(self, error_message):
+        message = f"Failed to retrieve code security configuration: {error_message}"
+        super().__init__(message)
+
 def get_code_security_config_id(base64_encoded_pat, owner, config_name):
-    """
-    Retrieves the ID of a code security configuration based on the owner and the configuration name.
+    try:
+        print(f"Retrieving code security configurations for owner: '{owner}'")
 
-    Parameters:
-    owner (str): The owner of the GitHub repository.
-    config_name (str): The name of the code security configuration.
+        url = f"https://api.github.com/orgs/{owner}/code-security/configurations"
+        request_headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Basic {base64_encoded_pat}",
+        }
 
-    Returns:
-    int: The ID of the code security configuration or None if not found.
-    """
+        response = safe_get_request(url, headers=request_headers)
+        response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
 
-    raise NotImplementedError("The get_code_security_config_id(..) function is not implemented yet.")
+        configs = response.json()
+
+        for config in configs:
+            if config['name'] == config_name:
+                configuration_id = config['id']
+                print(f"Configuration Name: {config_name} has ID: {configuration_id}")
+                return config['id']
+
+        # If the configuration name is not found, raise an exception
+        raise CodeSecurityConfigNotFoundError(owner, config_name)
+
+    except requests.exceptions.RequestException as e:
+        # Raise a custom exception with the original error message
+        raise CodeSecurityConfigRetrievalError(str(e))
 
 if __name__ == "__main__":
 
@@ -127,9 +177,9 @@ if __name__ == "__main__":
         print(f"Config Name: {args.config_name}")
         print(f"CSV Path: {args.csv_path}")
 
-        repo_names = get_repo_names_from_csv(args.csv_path)
-
         configuration_id = get_code_security_config_id(base64_encoded_pat, args.owner, args.config_name)
+
+        repo_names = get_repo_names_from_csv(args.csv_path)
 
         # TODO: Get repository_id of each repo.
         # TODO: Attach code security configuration to each repository.
