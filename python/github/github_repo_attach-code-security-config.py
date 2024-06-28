@@ -6,18 +6,34 @@ import pandas as pd
 import requests
 import time
 from dotenv import load_dotenv
+from math import ceil
+
+class EnvVarMissingError(Exception):
+    """Exception raised when an expected environment variable is missing."""
+    def __init__(self, env_var_name):
+        self.message = f"{env_var_name} environment variable is not set."
+        super().__init__(self.message)
+
+def get_environment_variable_or_raise(env_var_name):
+    value = os.getenv(env_var_name)
+    if not value:
+        raise EnvVarMissingError(env_var_name)
+    return value
 
 def get_base64_encoded_pat():
     """ Get the Personal Access Token (PAT) from the GITHUB_PAT environment variable as base64 encoded."""
-    # Get the Personal Access Token (PAT) from environment variables.
-    pat = os.getenv('GITHUB_PAT')
-    if not pat:
-        raise ValueError("GITHUB_PAT environment variable is not set.")
-
-    # Base64 encode the PAT
+    pat = get_environment_variable_or_raise('GITHUB_PAT')
     base64_encoded_pat = base64.b64encode(bytes(f'{pat}', 'utf-8')).decode('utf-8')
 
     return base64_encoded_pat
+
+def get_repo_batch_size():
+    batch_size = os.getenv("BATCH_SIZE", 1)
+    print(f"Batch Size: {batch_size}")
+    return int(batch_size)
+
+# Usage example
+get_repo_batch_size()
 
 class CSVFileError(Exception):
     """Base exception class for CSV file-related errors."""
@@ -288,7 +304,6 @@ def get_repo_ids_from_names(base64_encoded_pat, owner, repo_names):
 if __name__ == "__main__":
 
     try:
-
         # Load environment variables from .env file.
         load_dotenv()
 
@@ -311,17 +326,37 @@ if __name__ == "__main__":
 
         repo_names = get_repo_names_from_csv(args.csv_path)
 
-        repos = get_repo_ids_from_names(base64_encoded_pat, args.owner, repo_names)
+        batch_size = get_repo_batch_size()
 
-        repo_ids_list = list(repos.values())
-        print(f"Repository IDs: {repo_ids_list}")
+        # Calculate the number of batches needed
+        num_batches = ceil(len(repo_names) / batch_size)
 
-        try:
-            # TODO: Remove the try-except block once the issue is resolved.
-            #       But don't merge this until the issue is resolved.
-            attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, repo_ids_list)
-        except Exception as e:
-            print(f"\nIgnoring ('til a fix is found): Failed to attach configuration to repositories:\n{e}\n")
+        for i in range(num_batches):
+
+            print(f"\nProcessing repo batch {i+1}/{num_batches}")
+
+            # Calculate start and end index for the current batch
+            start_idx = i * batch_size
+            end_idx = start_idx + batch_size
+
+            # Get the current batch of repository names
+            batch_repo_names = repo_names[start_idx:end_idx]
+
+            print(f"Number of repos in batch: {len(batch_repo_names)}")
+
+            # Get repository IDs for the current batch
+            batch_repos = get_repo_ids_from_names(base64_encoded_pat, args.owner, batch_repo_names)
+
+            batch_repo_ids_list = list(batch_repos.values())
+            print(f"Repository IDs: {batch_repo_ids_list}")
+
+            try:
+                # TODO: Remove the try-except block once the issue is resolved.
+                #       !! But don't merge this until the issue is resolved. !!
+                #       Ignoring the exception for now, while we implement batching.
+                attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, batch_repo_ids_list)
+            except Exception as e:
+                print(f"\nIgnoring ('til a fix is found): Failed to attach configuration to batch {i+1} repositories:\n{e}\n")
 
         print("Processing completed successfully.")
 
