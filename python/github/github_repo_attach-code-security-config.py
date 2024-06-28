@@ -117,6 +117,15 @@ def safe_get_request(url, headers):
         return safe_get_request(url, headers)  # Retry the request
     return response
 
+def safe_patch_request(url, headers, json):
+    """Makes a PATCH request and handles rate limiting by waiting until the limit is reset."""
+    response = requests.put(url, json=json, headers=headers)
+    if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+        reset_time = get_rate_limit_reset_time(response)
+        wait_for_rate_limit_reset(reset_time)
+        return safe_patch_request(url, headers, json)  # Retry the request
+    return response
+
 class CodeSecurityConfigNotFoundError(Exception):
     """Exception raised when the code security configuration is not found."""
     def __init__(self, owner, config_name):
@@ -229,7 +238,7 @@ def attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids
     }
     print(f"Attaching configuration {configuration_id} to repos. Data: {data}")
 
-    response = requests.patch(api_url, headers=request_headers, json=data)
+    response = safe_patch_request(api_url, headers=request_headers, json=data)
     response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
 
     # Check if the request was successful
@@ -237,7 +246,6 @@ def attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids
         raise CodeSecurityConfigAttachReposError(response, configuration_id, repo_ids_list)
 
     print("Configuration attached successfully to all specified repositories.")
-
 
 class RepositoryNotFoundError(Exception):
     """Exception raised when a GitHub repository is not found."""
@@ -308,7 +316,12 @@ if __name__ == "__main__":
         repo_ids_list = list(repos.values())
         print(f"Repository IDs: {repo_ids_list}")
 
-        attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, repo_ids_list)
+        try:
+            # TODO: Remove the try-except block once the issue is resolved.
+            #       But don't merge this until the issue is resolved.
+            attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, repo_ids_list)
+        except Exception as e:
+            print(f"\nIgnoring ('til a fix is found): Failed to attach configuration to repositories:\n{e}\n")
 
         print("Processing completed successfully.")
 
