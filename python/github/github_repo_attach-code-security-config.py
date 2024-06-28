@@ -350,13 +350,7 @@ if __name__ == "__main__":
             batch_repo_ids_list = list(batch_repos.values())
             print(f"Repository IDs: {batch_repo_ids_list}")
 
-            try:
-                # TODO: Remove the try-except block once the issue is resolved.
-                #       !! But don't merge this until the issue is resolved. !!
-                #       Ignoring the exception for now, while we implement batching.
-                attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, batch_repo_ids_list)
-            except Exception as e:
-                print(f"\nIgnoring ('til a fix is found): Failed to attach configuration to batch {i+1} repositories:\n{e}\n")
+            attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, batch_repo_ids_list)
 
         print("Processing completed successfully.")
 
