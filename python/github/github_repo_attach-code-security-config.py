@@ -169,6 +169,76 @@ def get_code_security_config_id(base64_encoded_pat, owner, config_name):
         # Raise a custom exception with the original error message
         raise CodeSecurityConfigRetrievalError(str(e))
 
+def get_code_security_config(base64_encoded_pat, owner, configuration_id):
+    """
+    Retrieves a specific code security configuration by its ID for a GitHub organization.
+
+    :param base64_encoded_pat: The GitHub Personal Access Token (PAT) encoded in base64.
+                               This is used for authentication with the GitHub API.
+    :param owner: The name of the GitHub organization owning the repos and code security configurations.
+    :param configuration_id: The ID of the code security configuration to retrieve.
+    :return: The code security configuration if found.
+    :raises CodeSecurityConfigRetrievalError: If there is an error in retrieving the configuration from GitHub.
+    """
+    try:
+        print(f"Retrieving code security configuration ID: '{configuration_id}' for owner: '{owner}'")
+        url = f"https://api.github.com/orgs/{owner}/code-security/configurations/{configuration_id}"
+        request_headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Basic {base64_encoded_pat}",
+        }
+        response = safe_get_request(url, headers=request_headers)
+        response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
+
+        configJson = response.json()
+        print(f"\nConfiguration JSON:\n{configJson}\n")
+        return configJson
+    except requests.exceptions.RequestException as e:
+        raise CodeSecurityConfigRetrievalError(str(e))
+
+class CodeSecurityConfigAttachReposError(Exception):
+    """Exception raised when attaching a code security configuration to repositories fails."""
+    def __init__(self, response, configuration_id, repo_ids_list):
+        self.configuration_id = configuration_id
+        self.repo_ids_list = repo_ids_list
+        self.error_message = f"Failed to attach configuration {configuration_id} to repositories {repo_ids_list}: HTTP Status Code: {response.status_code}, {response.text}"
+        super().__init__(self.error_message)
+
+def attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids_list):
+    """
+    Attaches a code security configuration to multiple GitHub repositories with a single API call.
+
+    :param base64_encoded_pat: The Base64 encoded Personal Access Token for GitHub API authentication.
+    :param owner: The GitHub username or organization name that owns the repositories.
+    :param configuration_id: The ID of the code security configuration to attach.
+    :param repo_ids_list: A list of repository IDs to which the configuration will be attached.
+    :type repo_ids_list: list
+    :raises CodeSecurityConfigAttachReposError: Raises an exception if the API call fails or returns an error.
+    """
+    api_url = f"https://api.github.com/orgs/{owner}/code-security/configurations/{configuration_id}/attach"
+    request_headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Authorization": f"Basic {base64_encoded_pat}"
+    }
+
+    data = {
+        "scope": "selected",
+        "selected_repository_ids": repo_ids_list
+    }
+    print(f"Attaching configuration {configuration_id} to repos. Data: {data}")
+
+    response = requests.patch(api_url, headers=request_headers, json=data)
+    response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
+
+    # Check if the request was successful
+    if response.status_code not in [202]:
+        raise CodeSecurityConfigAttachReposError(response, configuration_id, repo_ids_list)
+
+    print("Configuration attached successfully to all specified repositories.")
+
+
 class RepositoryNotFoundError(Exception):
     """Exception raised when a GitHub repository is not found."""
     def __init__(self, repo_name, owner):
@@ -229,15 +299,20 @@ if __name__ == "__main__":
 
         configuration_id = get_code_security_config_id(base64_encoded_pat, args.owner, args.config_name)
 
+        configuration = get_code_security_config(base64_encoded_pat, args.owner, configuration_id)
+
         repo_names = get_repo_names_from_csv(args.csv_path)
 
         repos = get_repo_ids_from_names(base64_encoded_pat, args.owner, repo_names)
 
-        # TODO: Attach code security configuration to each repository.
+        repo_ids_list = list(repos.values())
+        print(f"Repository IDs: {repo_ids_list}")
+
+        attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, repo_ids_list)
 
         print("Processing completed successfully.")
 
     except Exception as e:
         print("Processing failed.")
-        print(f"ERROR: {e}")
+        print(f"ERROR: {type(e).__name__}: {e}")
         exit(1)
