@@ -1,0 +1,45 @@
+
+# Your personal access token for GitHub
+GITHUB_PAT=your_github_personal_access_token_here
+
+# The organization name on GitHub
+#
+# Ignored by:
+#   python\github\github_repo_add_topics.py
+#   python\github\github_repo_attach-code-security-config.py
+#
+GITHUB_ORG=your_github_organization_name_here
+
+# A boolean flag to enable or disable team name and
+# owner columns in the output.
+# If enabled the team and owner information is read
+# from the existing Excel file.
+# Defaults to 'false' if not set.
+#
+# Ignored by:
+#   python\github\github_repo_add_topics.py
+#   python\github\github_repo_attach-code-security-config.py
+#
+CATEGORY_LABEL_TEAM=false
+
+# A boolean flag to enable or disable language detection
+# and include a 'Languages' column in the output.
+# Defaults to 'false' if not set.
+#
+# Ignored by:
+#   python\github\github_repo_add_topics.py
+#   python\github\github_repo_attach-code-security-config.py
+#
+CATEGORY_LABEL_LANGUAGE=false
+
+# The number of repositories to process in a batch.
+# Defaults to 1 if not set.
+#
+# Only used by:
+#   python\github\github_repo_attach-code-security-config.py
+#
+BATCH_SIZE=10
+
+# The number of seconds to wait for a response from the GitHub API.
+# Defaults to 60 (1 minute) if not set.
+API_TIMEOUT_SECONDS=10
