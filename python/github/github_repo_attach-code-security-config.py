@@ -34,7 +34,7 @@ def get_repo_batch_size():
 
 def get_api_timeout_seconds():
     """Gets the API timeout value from the environment variable or defaults to 60 seconds."""
-    timeout_seconds = os.getenv("API_TIMEOUT_SECONDS", 60)
+    timeout_seconds = float(os.getenv("API_TIMEOUT_SECONDS", "60"))
     print(f"API Timeout: {timeout_seconds} seconds")
     return timeout_seconds
 
@@ -77,6 +77,7 @@ class CSVFileParseError(CSVFileError):
 def read_csv_file(csv_path):
     """
     Reads a CSV file and returns a DataFrame if it contains the required columns.
+
     :return: DataFrame containing the CSV data.
     :raises CSVFileError: If there are issues with the CSV file or path.
     """
@@ -127,17 +128,39 @@ def wait_for_rate_limit_reset(reset_time):
         print(f"Rate limit exceeded. Waiting for {wait_time} seconds.")
         time.sleep(wait_time)
 
-def safe_get_request(url, headers):
-    """ Makes a request and handles rate limiting by waiting until the limit is reset."""
-    response = requests.get(url, headers=headers)
-    if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
-        reset_time = get_rate_limit_reset_time(response)
-        wait_for_rate_limit_reset(reset_time)
-        return safe_get_request(url, headers)  # Retry the request
-    return response
+def safe_get_request(url, headers, timeout_seconds):
+    """
+    Makes a request and handles rate limiting by waiting until the limit is reset.
 
-def safe_post_request(url, headers, json, timeout=60):
-    """Makes a POST request and handles rate limiting and conflicts by waiting until the limit is reset or backing off on conflict."""
+    :return: The response object.
+    :raises TimeoutError: If the request times out while waiting for the rate limit to reset.
+    """
+    start_time = time.time()
+    while True:
+
+        response = requests.get(url, headers=headers)
+        current_time = time.time()
+
+        # Handle rate limiting
+        if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+            # Check for timeout
+            if current_time - start_time > timeout_seconds:
+                raise TimeoutError("Request timed out while waiting for rate limit reset.")
+            reset_time = get_rate_limit_reset_time(response)
+            wait_for_rate_limit_reset(reset_time)
+            continue  # Retry the request
+
+        return response
+
+def safe_post_request(url, headers, json, timeout_seconds):
+    """
+    Makes a POST request and handles rate limiting and conflicts by waiting until the limit is reset
+    or backing off on conflict.
+
+    :return: The response object.
+    :raises TimeoutError: If the request times out while waiting for the rate limit to reset,
+    or waiting for conflict retry.
+    """
     start_time = time.time()
     backoff_time = 1  # Initial backoff time in seconds
 
@@ -147,21 +170,21 @@ def safe_post_request(url, headers, json, timeout=60):
 
         # Handle rate limiting
         if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+            # Check for timeout
+            if current_time - start_time > timeout_seconds:
+                raise TimeoutError("Request timed out while waiting for rate limit reset.")
             reset_time = get_rate_limit_reset_time(response)
             wait_for_rate_limit_reset(reset_time)
-            # Check for timeout
-            if current_time - start_time > timeout:
-                raise TimeoutError("Request timed out while waiting for rate limit reset.")
             continue  # Retry the request
 
         # Handle conflict
         elif response.status_code == 409:
+            # Check for timeout
+            if current_time - start_time > timeout_seconds:
+                raise TimeoutError("Request timed out due to repeated conflicts.")
             print(f"Conflict detected. Retrying after {backoff_time} seconds.")
             time.sleep(backoff_time)
             backoff_time *= 2  # Exponential backoff
-            # Check for timeout
-            if current_time - start_time > timeout:
-                raise TimeoutError("Request timed out due to repeated conflicts.")
             continue  # Retry the request
 
         return response
@@ -178,14 +201,10 @@ class CodeSecurityConfigRetrievalError(Exception):
         message = f"Failed to retrieve code security configuration: {error_message}"
         super().__init__(message)
 
-def get_code_security_config_id(base64_encoded_pat, owner, config_name):
+def get_code_security_config_id(base64_encoded_pat, owner, config_name, api_timeout_seconds):
     """
     Retrieves the ID of a specific code security configuration for a GitHub organization.
 
-    :param base64_encoded_pat: The GitHub Personal Access Token (PAT) encoded in base64.
-                               This is used for authentication with the GitHub API.
-    :param owner: The name of the GitHub organization owning the repos and code security configurations.
-    :param config_name: The name of the code security configuration to retrieve the ID for.
     :return: The ID of the code security configuration if found.
     :raises CodeSecurityConfigNotFoundError: If no configuration with the given name is found for the owner.
     :raises CodeSecurityConfigRetrievalError: If there is an error in retrieving the configurations from GitHub.
@@ -200,7 +219,7 @@ def get_code_security_config_id(base64_encoded_pat, owner, config_name):
             "Authorization": f"Basic {base64_encoded_pat}",
         }
 
-        response = safe_get_request(url, headers=request_headers)
+        response = safe_get_request(url, request_headers, api_timeout_seconds)
         response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
 
         configs = response.json()
@@ -218,14 +237,10 @@ def get_code_security_config_id(base64_encoded_pat, owner, config_name):
         # Raise a custom exception with the original error message
         raise CodeSecurityConfigRetrievalError(str(e))
 
-def get_code_security_config(base64_encoded_pat, owner, configuration_id):
+def get_code_security_config(base64_encoded_pat, owner, configuration_id, api_timeout_seconds):
     """
     Retrieves a specific code security configuration by its ID for a GitHub organization.
 
-    :param base64_encoded_pat: The GitHub Personal Access Token (PAT) encoded in base64.
-                               This is used for authentication with the GitHub API.
-    :param owner: The name of the GitHub organization owning the repos and code security configurations.
-    :param configuration_id: The ID of the code security configuration to retrieve.
     :return: The code security configuration if found.
     :raises CodeSecurityConfigRetrievalError: If there is an error in retrieving the configuration from GitHub.
     """
@@ -237,7 +252,7 @@ def get_code_security_config(base64_encoded_pat, owner, configuration_id):
             "X-GitHub-Api-Version": "2022-11-28",
             "Authorization": f"Basic {base64_encoded_pat}",
         }
-        response = safe_get_request(url, headers=request_headers)
+        response = safe_get_request(url, request_headers, api_timeout_seconds)
         response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
 
         configJson = response.json()
@@ -261,17 +276,8 @@ def attach_config_to_repos(
     repo_ids_list,
     api_timeout_seconds
 ):
-    # Function body continues here...attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids_list, api_timeout_seconds):
-
     """
     Attaches a code security configuration to multiple GitHub repositories with a single API call.
-
-    :param base64_encoded_pat: The Base64 encoded Personal Access Token for GitHub API authentication.
-    :param owner: The GitHub username or organization name that owns the repositories.
-    :param configuration_id: The ID of the code security configuration to attach.
-    :param repo_ids_list: A list of repository IDs to which the configuration will be attached.
-    :type repo_ids_list: list
-    :raises CodeSecurityConfigAttachReposError: Raises an exception if the API call fails or returns an error.
     """
     api_url = f"https://api.github.com/orgs/{owner}/code-security/configurations/{configuration_id}/attach"
     request_headers = {
@@ -303,15 +309,10 @@ class RepositoryNotFoundError(Exception):
         self.message = f"Repository '{repo_name}' not found for owner '{owner}'."
         super().__init__(self.message)
 
-def get_repo_ids_from_names(base64_encoded_pat, owner, repo_names):
+def get_repo_ids_from_names(base64_encoded_pat, owner, repo_names, api_timeout_seconds):
     """
-    Fetches the IDs of given GitHub repositories for a specific owner using a Base64 encoded Personal Access Token (PAT).
+    Fetches the IDs of given GitHub repositories for a specific owner.
 
-    This function sends a GET request to the GitHub API for each repository name provided in the `repo_names` list. It constructs a dictionary mapping each repository name to its corresponding ID as found in the GitHub API response. If a repository does not exist, a `RepositoryNotFoundError` is raised.
-
-    :param base64_encoded_pat: The Base64 encoded Personal Access Token used for authentication with the GitHub API.
-    :param owner: The owner of the repositories. This is typically a user or organization name.
-    :param repo_names: A list of repository names for which IDs are to be fetched.
     :return: A dictionary mapping repository names to their respective IDs.
     :rtype: dict
     :raises RepositoryNotFoundError: If any of the repositories do not exist under the specified owner.
@@ -324,7 +325,7 @@ def get_repo_ids_from_names(base64_encoded_pat, owner, repo_names):
             "X-GitHub-Api-Version": "2022-11-28",
             "Authorization": f"Basic {base64_encoded_pat}",
         }
-        response = requests.get(repo_url, headers=request_headers)
+        response = safe_get_request(repo_url, request_headers, api_timeout_seconds)
         if response.status_code == 200:
             repo_data = response.json()
             repo_ids[repo_name] = repo_data['id']
@@ -360,13 +361,15 @@ if __name__ == "__main__":
         configuration_id = get_code_security_config_id(
             base64_encoded_pat,
             args.owner,
-            args.config_name
+            args.config_name,
+            api_timeout_seconds
         )
 
         configuration = get_code_security_config(
             base64_encoded_pat,
             args.owner,
-            configuration_id
+            configuration_id,
+            api_timeout_seconds
         )
 
         repo_names = get_repo_names_from_csv(args.csv_path)
@@ -391,7 +394,8 @@ if __name__ == "__main__":
             batch_repos = get_repo_ids_from_names(
                 base64_encoded_pat,
                 args.owner,
-                batch_repo_names
+                batch_repo_names,
+                api_timeout_seconds
             )
             batch_repo_ids_list = list(batch_repos.values())
             print(f"Repository IDs: {batch_repo_ids_list}")
