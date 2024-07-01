@@ -57,6 +57,11 @@ The number of repositories to process in a batch.
 
 Defaults to 1 if not set.
 
+### API_TIMEOUT_SECONDS
+The number of seconds to wait for a response from the GitHub API.
+
+Defaults to 60 seconds if not set.
+
 ## CSV file setup
 Prepare a CSV file where each row represents a GitHub repo that to be targetted.
 

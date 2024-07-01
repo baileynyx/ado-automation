@@ -39,3 +39,7 @@ CATEGORY_LABEL_LANGUAGE=false
 #   python\github\github_repo_attach-code-security-config.py
 #
 BATCH_SIZE=10
+
+# The number of seconds to wait for a response from the GitHub API.
+# Defaults to 60 (1 minute) if not set.
+API_TIMEOUT_SECONDS=10

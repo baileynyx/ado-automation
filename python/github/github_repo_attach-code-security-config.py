@@ -32,8 +32,11 @@ def get_repo_batch_size():
     print(f"Batch Size: {batch_size}")
     return int(batch_size)
 
-# Usage example
-get_repo_batch_size()
+def get_api_timeout_seconds():
+    """Gets the API timeout value from the environment variable or defaults to 60 seconds."""
+    timeout_seconds = os.getenv("API_TIMEOUT_SECONDS", 60)
+    print(f"API Timeout: {timeout_seconds} seconds")
+    return timeout_seconds
 
 class CSVFileError(Exception):
     """Base exception class for CSV file-related errors."""
@@ -133,14 +136,35 @@ def safe_get_request(url, headers):
         return safe_get_request(url, headers)  # Retry the request
     return response
 
-def safe_post_request(url, headers, json):
-    """Makes a POST request and handles rate limiting by waiting until the limit is reset."""
-    response = requests.post(url, json=json, headers=headers)
-    if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
-        reset_time = get_rate_limit_reset_time(response)
-        wait_for_rate_limit_reset(reset_time)
-        return safe_post_request(url, headers, json)  # Retry the request
-    return response
+def safe_post_request(url, headers, json, timeout=60):
+    """Makes a POST request and handles rate limiting and conflicts by waiting until the limit is reset or backing off on conflict."""
+    start_time = time.time()
+    backoff_time = 1  # Initial backoff time in seconds
+
+    while True:
+        response = requests.post(url, json=json, headers=headers)
+        current_time = time.time()
+
+        # Handle rate limiting
+        if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers and response.headers['X-RateLimit-Remaining'] == '0':
+            reset_time = get_rate_limit_reset_time(response)
+            wait_for_rate_limit_reset(reset_time)
+            # Check for timeout
+            if current_time - start_time > timeout:
+                raise TimeoutError("Request timed out while waiting for rate limit reset.")
+            continue  # Retry the request
+
+        # Handle conflict
+        elif response.status_code == 409:
+            print(f"Conflict detected. Retrying after {backoff_time} seconds.")
+            time.sleep(backoff_time)
+            backoff_time *= 2  # Exponential backoff
+            # Check for timeout
+            if current_time - start_time > timeout:
+                raise TimeoutError("Request timed out due to repeated conflicts.")
+            continue  # Retry the request
+
+        return response
 
 class CodeSecurityConfigNotFoundError(Exception):
     """Exception raised when the code security configuration is not found."""
@@ -230,7 +254,15 @@ class CodeSecurityConfigAttachReposError(Exception):
         self.error_message = f"Failed to attach configuration {configuration_id} to repositories {repo_ids_list}: HTTP Status Code: {response.status_code}, {response.text}"
         super().__init__(self.error_message)
 
-def attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids_list):
+def attach_config_to_repos(
+    base64_encoded_pat,
+    owner,
+    configuration_id,
+    repo_ids_list,
+    api_timeout_seconds
+):
+    # Function body continues here...attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids_list, api_timeout_seconds):
+
     """
     Attaches a code security configuration to multiple GitHub repositories with a single API call.
 
@@ -248,13 +280,13 @@ def attach_config_to_repos(base64_encoded_pat, owner, configuration_id, repo_ids
         "Authorization": f"Basic {base64_encoded_pat}"
     }
 
-    data = {
+    json_data = {
         "scope": "selected",
         "selected_repository_ids": repo_ids_list
     }
-    print(f"Attaching configuration {configuration_id} to repos. Data: {data}")
+    print(f"Attaching configuration {configuration_id} to repos. Data: {json_data}")
 
-    response = safe_post_request(api_url, headers=request_headers, json=data)
+    response = safe_post_request(api_url, request_headers, json_data, api_timeout_seconds)
     response.raise_for_status()  # Raises an HTTPError if the response status code is 4XX/5XX
 
     # Check if the request was successful
@@ -301,14 +333,10 @@ def get_repo_ids_from_names(base64_encoded_pat, owner, repo_names):
             raise RepositoryNotFoundError(repo_name, owner)
     return repo_ids
 
+# Script entry point.
 if __name__ == "__main__":
 
     try:
-        # Load environment variables from .env file.
-        load_dotenv()
-
-        base64_encoded_pat = get_base64_encoded_pat()
-
         parser = argparse.ArgumentParser(description="Attach a code security configuration to GitHub repositories.")
         parser.add_argument("owner", help="GitHub name of the user or organization name that owns the GitHub repositories.")
         parser.add_argument("config_name", help="Name of the code security configuration to attach.")
@@ -320,13 +348,28 @@ if __name__ == "__main__":
         print(f"Config Name: {args.config_name}")
         print(f"CSV Path: {args.csv_path}")
 
-        configuration_id = get_code_security_config_id(base64_encoded_pat, args.owner, args.config_name)
+        # Load environment variables from .env file.
+        load_dotenv()
 
-        configuration = get_code_security_config(base64_encoded_pat, args.owner, configuration_id)
+        base64_encoded_pat = get_base64_encoded_pat()
 
-        repo_names = get_repo_names_from_csv(args.csv_path)
+        api_timeout_seconds = get_api_timeout_seconds()
 
         batch_size = get_repo_batch_size()
+
+        configuration_id = get_code_security_config_id(
+            base64_encoded_pat,
+            args.owner,
+            args.config_name
+        )
+
+        configuration = get_code_security_config(
+            base64_encoded_pat,
+            args.owner,
+            configuration_id
+        )
+
+        repo_names = get_repo_names_from_csv(args.csv_path)
 
         # Calculate the number of batches needed
         num_batches = ceil(len(repo_names) / batch_size)
@@ -345,13 +388,21 @@ if __name__ == "__main__":
             print(f"Number of repos in batch: {len(batch_repo_names)}")
 
             # Get repository IDs for the current batch
-            batch_repos = get_repo_ids_from_names(base64_encoded_pat, args.owner, batch_repo_names)
-
+            batch_repos = get_repo_ids_from_names(
+                base64_encoded_pat,
+                args.owner,
+                batch_repo_names
+            )
             batch_repo_ids_list = list(batch_repos.values())
             print(f"Repository IDs: {batch_repo_ids_list}")
 
-            attach_config_to_repos(base64_encoded_pat, args.owner, configuration_id, batch_repo_ids_list)
-
+            attach_config_to_repos(
+                base64_encoded_pat,
+                args.owner,
+                configuration_id,
+                batch_repo_ids_list,
+                api_timeout_seconds
+            )
         print("Processing completed successfully.")
 
     except Exception as e:
